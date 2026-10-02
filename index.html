@@ -1,0 +1,208 @@
+//+------------------------------------------------------------------+
+//|                                           IslandLeaderboard.mqh  |
+//|                                  Copyright 2026, MetaQuotes Ltd. |
+//|                                             https://www.mql5.com |
+//+------------------------------------------------------------------+
+#property copyright "Copyright 2026"
+#property link      "https://www.mql5.com"
+#property version   "1.00"
+#property strict
+
+//--- Inputs
+input int      InpMaxIslands      = 21;           // Total Number of Islands
+input color    InpHeaderColor     = clrGold;      // Header Text Color
+input color    InpTextColor       = clrWhite;     // Body Text Color
+input color    InpWinColor        = clrLime;      // Full Completion Text Color
+input int      InpXOffset         = 20;           // Panel X Position
+input int      InpYOffset         = 30;           // Panel Y Position
+
+//--- Player Structure
+struct SPlayerData
+  {
+   string            nickname;          // Player Nickname
+   int               islands_cleared;   // Number of Islands Passed
+   long              completion_time;   // Time when completed (Epoch seconds)
+   bool              completed_all;     // Has completed all islands
+  };
+
+//--- Global Variables
+SPlayerData g_Players[];
+int         g_TotalPlayers = 0;
+
+//+------------------------------------------------------------------+
+//| Add or Update Player Data                                        |
+//+------------------------------------------------------------------+
+void AddOrUpdatePlayer(string nickname, int islandsPassed, bool finishedAll = false)
+  {
+   int index = -1;
+   for(int i = 0; i < g_TotalPlayers; i++)
+     {
+      if(g_Players[i].nickname == nickname)
+        {
+         index = i;
+         break;
+        }
+     }
+
+   if(index == -1)
+     {
+      g_TotalPlayers++;
+      ArrayResize(g_Players, g_TotalPlayers);
+      index = g_TotalPlayers - 1;
+      g_Players[index].nickname = nickname;
+     }
+
+   g_Players[index].islands_cleared = islandsPassed;
+   if(islandsPassed >= InpMaxIslands || finishedAll)
+     {
+      g_Players[index].islands_cleared = InpMaxIslands;
+      g_Players[index].completed_all = true;
+      if(g_Players[index].completion_time == 0)
+         g_Players[index].completion_time = TimeCurrent();
+     }
+   else
+     {
+      g_Players[index].completed_all = false;
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| Sort Players by Islands Cleared (Descending)                    |
+//+------------------------------------------------------------------+
+void SortPlayers()
+  {
+   for(int i = 0; i < g_TotalPlayers - 1; i++)
+     {
+      for(int j = i + 1; j < g_TotalPlayers; j++)
+        {
+         if(g_Players[j].islands_cleared > g_Players[i].islands_cleared)
+           {
+            SPlayerData temp = g_Players[i];
+            g_Players[i] = g_Players[j];
+            g_Players[j] = temp;
+           }
+        }
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| Draw Label Helper                                                |
+//+------------------------------------------------------------------+
+void CreateLabel(string name, string text, int x, int y, color textCol, int fontSize = 9)
+  {
+   if(ObjectFind(0, name) < 0)
+     {
+      ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+      ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+     }
+   ObjectSetString(0, name, OBJPROP_TEXT, text);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, textCol);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
+   ObjectSetString(0, name, OBJPROP_FONT, "Arial");
+  }
+
+//+------------------------------------------------------------------+
+//| Render Top 10 & Full Clearance Tables                            |
+//+------------------------------------------------------------------+
+void RenderLeaderboard()
+  {
+   SortPlayers();
+
+   int lineSpacing = 18;
+   int currentY = InpYOffset;
+
+   // 1. TOP 10 LEADERBOARD
+   CreateLabel("Lbl_Top10_Header", "=== TOP 10 PLAYERS ===", InpXOffset, currentY, InpHeaderColor, 10);
+   currentY += lineSpacing;
+
+   CreateLabel("Lbl_Top10_SubHeader", "Rank  |  Nickname          |  Islands Cleared", InpXOffset, currentY, InpHeaderColor, 9);
+   currentY += lineSpacing;
+
+   int countTop10 = MathMin(g_TotalPlayers, 10);
+   for(int i = 0; i < 10; i++)
+     {
+      string objName = "Lbl_Top10_Row_" + IntegerToString(i);
+      if(i < countTop10)
+        {
+         string rowText = StringFormat("#%-2d    |  %-16s  |  %d / %d", 
+                                       i + 1, 
+                                       g_Players[i].nickname, 
+                                       g_Players[i].islands_cleared, 
+                                       InpMaxIslands);
+         CreateLabel(objName, rowText, InpXOffset, currentY, InpTextColor, 9);
+         currentY += lineSpacing;
+        }
+      else
+        {
+         ObjectDelete(0, objName);
+        }
+     }
+
+   currentY += 15; // Gap between panels
+
+   // 2. ALL ISLANDS COMPLETED (HALL OF FAME)
+   CreateLabel("Lbl_Winners_Header", "=== ALL ISLANDS COMPLETED ===", InpXOffset, currentY, InpWinColor, 10);
+   currentY += lineSpacing;
+
+   CreateLabel("Lbl_Winners_SubHeader", "Nickname          |  Status", InpXOffset, currentY, InpWinColor, 9);
+   currentY += lineSpacing;
+
+   int winnerCount = 0;
+   for(int i = 0; i < g_TotalPlayers; i++)
+     {
+      if(g_Players[i].completed_all)
+        {
+         string objName = "Lbl_Winner_Row_" + IntegerToString(winnerCount);
+         string rowText = StringFormat("%-18s  |  CLEARED ALL!", g_Players[i].nickname);
+         CreateLabel(objName, rowText, InpXOffset, currentY, InpWinColor, 9);
+         currentY += lineSpacing;
+         winnerCount++;
+        }
+     }
+
+   if(winnerCount == 0)
+     {
+      CreateLabel("Lbl_Winner_Row_None", "No players completed all islands yet.", InpXOffset, currentY, clrGray, 9);
+     }
+   else
+     {
+      ObjectDelete(0, "Lbl_Winner_Row_None");
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| Expert initialization function                                   |
+//+------------------------------------------------------------------+
+int OnInit()
+  {
+   // Demo data
+   AddOrUpdatePlayer("Trader_Alpha", 21, true);
+   AddOrUpdatePlayer("Ocean_King", 18);
+   AddOrUpdatePlayer("Captain_99", 21, true);
+   AddOrUpdatePlayer("Island_Hero", 12);
+   AddOrUpdatePlayer("Sailor_X", 5);
+
+   RenderLeaderboard();
+   return(INIT_SUCCEEDED);
+  }
+
+//+------------------------------------------------------------------+
+//| Expert deinitialization function                                 |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+  {
+   ObjectsDeleteAll(0, "Lbl_");
+  }
+
+//+------------------------------------------------------------------+
+//| Expert tick function                                             |
+//+------------------------------------------------------------------+
+void OnTick()
+  {
+   // RenderLeaderboard(); // Un-comment if updating dynamically on ticks
+  }
+//+------------------------------------------------------------------+
